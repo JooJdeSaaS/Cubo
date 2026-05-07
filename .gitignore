@@ -1,0 +1,21 @@
+# Ambientes Virtuais (Essencial para não subir os gigabytes do venv)
+venv/
+ENV/
+env/
+.env
+
+# Configurações do PyCharm (JetBrains)
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Python (Arquivos compilados e cache)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Sistema Operacional (Ubuntu/Linux)
+.DS_Store
+.directory
