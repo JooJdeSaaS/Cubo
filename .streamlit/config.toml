@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#00d2ff"          # Cor dos botões, links e destaques (Ciano)
+backgroundColor = "#0d1117"       # Cor de fundo principal do site (Cinza Escuro/Noir)
+secondaryBackgroundColor = "#161b22" # Cor de fundo dos blocos e inputs
+textColor = "#f0f6fc"             # Cor dos textos principais
+font = "sans serif"
