@@ -6,92 +6,55 @@ import time
 class LeitorCubo:
     """
     Classe de abstração da camada de hardware responsável pela comunicação
-    ponto a ponto (UART) via protocolo Serial entre o sistema embarcado (ESP32)
-    e a aplicação de monitoramento em tempo real.
+    ponto a ponto (UART) via protocolo Serial entre a ESP32 e o Streamlit.
     """
 
-    def __init__(self, porta='/dev/ttyUSB0', baudrate=9600):
-        """
-        Inicializa as especificações da interface de comunicação serial.
-
-        Parâmetros:
-            porta (str): Diretório do descritor de arquivo do barramento serial no ecossistema Linux POSIX.
-            baudrate (int): Taxa de modulação/transmissão de dados (bits por segundo). Default: 9600 bps.
-        """
+    def __init__(self, porta='/dev/ttyUSB0', baudrate=115200):
         self.porta = porta
         self.baudrate = baudrate
         self.conexao = None
 
     def conectar(self):
-        """
-        Tenta estabelecer uma conexão persistente com a porta serial configurada.
-        Inclui uma salvaguarda temporal para acomodar o ciclo de boot do hardware.
-        """
         try:
-            # Instancia o objeto serial com timeout para evitar o bloqueio por tempo indeterminado da thread principal
             self.conexao = serial.Serial(self.porta, self.baudrate, timeout=2)
-
-            # JUSTIFICATIVA TÉCNICA (Hardware Reset): A abertura da comunicação UART via DTR/RTS
-            # provoca um reset automático na ESP32. O delay de 2 segundos garante que o firmware
-            # do microcontrolador finalize sua rotina de setup antes do envio dos primeiros bytes.
-            time.sleep(2)
+            time.sleep(2)  # Justificativa Técnica: Tempo para o reboot de setup da ESP32
             return True
         except Exception as e:
-            # Tratamento genérico de exceções de IO para capturar falhas de permissão ou porta inexistente
             print(f"Erro ao conectar na porta {self.porta}: {e}")
             return False
 
     def ler_dados(self):
-        """
-        Monitora o buffer de entrada e executa a leitura assíncrona orientada a eventos.
-        Suporta de forma híbrida tanto pacotes estruturados em JSON quanto strings planas (texto puro).
-        """
-        # Verifica se o barramento está ativo e se há bytes pendentes no buffer de recepção (Rx)
         if self.conexao and self.conexao.in_waiting > 0:
             try:
-                # Ingestão de linha física: lê o fluxo de bytes até o caractere delimitador '\n',
-                # decodifica usando o padrão universal UTF-8 e remove espaços em branco periféricos.
                 linha = self.conexao.readline().decode('utf-8').strip()
 
-                # FLUXO A: Detecção e processamento de dados estruturados em formato nativo JSON
-                if linha.startswith("{") and list(linha)[-1] == "}":
+                if linha.startswith("{") and linha.endswith("}"):
                     return json.loads(linha)
-
-                # FLUXO B: Retrocompatibilidade e resiliência de software. Se o firmware da ESP32
-                # enviar strings concatenadas por caracteres delimitadores, aciona o parser manual.
                 else:
                     return self._parse_texto_puro(linha)
-
             except Exception:
-                # Bloco try-catch protege o laço contínuo do sistema contra pacotes de dados
-                # corrompidos ou falhas de ruído eletromagnético no barramento UART.
                 return None
         return None
 
     def _parse_texto_puro(self, linha):
-        """
-        Processamento e normalização de strings desestruturadas (Legacy Parse).
-        Aplica técnicas de Tokenização para segmentar variáveis textuais e convertê-las
-        em tipos primitivos numéricos do Python de forma determinística.
-        """
         dados = {}
         try:
-            # Tokenização primária: separa as leituras dos sensores utilizando o delimitador pipe '|'
+            # Separa o pacote bruto usando o caractere '|' enviado pela ESP32
             partes = linha.split('|')
             for parte in partes:
                 if ':' in parte:
-                    # Tokenização secundária: isola a chave identificadora do valor correspondente
                     chave_valor = parte.strip().split(':')
 
-                    # Normalização de strings: padroniza chaves em caixa baixa e remove unidades de
-                    # medida físicas para evitar incompatibilidades na inserção do dicionário científico.
-                    chave = chave_valor[0].strip().lower().replace("°c", "").replace("%", "")
+                    # Chave normalizada em caixa baixa (ex: 'temperatura', 'umidade', 'pm2.5')
+                    chave = chave_valor[0].strip().lower()
 
-                    # Extração do float: captura o valor numérico puro, isolando e descartando sufixos (ex: 'ug/m3')
-                    valor = float(chave_valor[1].strip().split()[0])
+                    # Isolamento do valor numérico limpando strings de unidade adjacentes
+                    valor_str = chave_valor[1].strip().lower()
+                    valor_str = valor_str.replace("°c", "").replace("%", "").replace("ug/m3", "")
 
-                    dados[chave] = valor
+                    # Converte de forma limpa o valor numérico isolado
+                    valor_limpo = valor_str.split()[0]
+                    dados[chave] = float(valor_limpo)
             return dados
         except Exception:
-            # Previne falhas catastróficas por ValueError ou IndexError caso a string de dados chegue truncada
             return None
