@@ -1,76 +1,103 @@
 #include "DHT11.h"
-#include <PMS.h>
 
-// --- Definições de Pinos (ADC1 - Estáveis) ---
+// --- Definições de Pinos ---
 #define DHTPIN 4
 #define MQ135PIN 34
 #define CO_PIN 35
 #define NH3_PIN 32
 #define NO2_PIN 33
 
-// Pinos para o PMS5003
-#define PMS_RX 17
-#define PMS_TX 16
+// Pinos da Serial2 para o PMS5003 (Corrigidos para a placa física)
+#define PMS_RX 16
+#define PMS_TX 17
 
 DHT11 dht(DHTPIN);
-PMS pms(Serial2);
-PMS::DATA data;
+
+// Buffer e variáveis para leitura manual do PMS5003
+uint8_t pmsBuffer[32];
+uint16_t pm1 = 0;
+uint16_t pm25 = 0;
+uint16_t pm10 = 0;
 
 void setup() {
-  // Inicializa a Serial principal (USB) a 9600 bps para conversar com o PyCharm
-  Serial.begin(9600);
+  // Inicializa a Serial nativa a 115200 bps para o Monitor Serial
+  Serial.begin(115200);
 
-  // Inicializa a Serial2 para o PMS5003 a 9600 bps
+  // Inicializa a Serial2 para comunicação com o PMS5003 (9600 baud padrão do sensor)
   Serial2.begin(9600, SERIAL_8N1, PMS_RX, PMS_TX);
 
+  // Configuração dos pinos dos sensores analógicos como entrada
   pinMode(MQ135PIN, INPUT);
   pinMode(CO_PIN, INPUT);
   pinMode(NH3_PIN, INPUT);
   pinMode(NO2_PIN, INPUT);
+
+  Serial.println("Sistema 'Climatempo da Qualidade do Ar' Iniciado...");
 }
 
 void loop() {
-  // --- Leitura DHT11 ---
+  // --- Leitura do DHT11 ---
   int h = dht.readHumidity();
   float t = dht.readTemperature();
 
-  // --- Leitura Analógica (Gases) ---
+  // --- Leitura dos Sensores Analógicos ---
   int mq_val = analogRead(MQ135PIN);
   int co_val = analogRead(CO_PIN);
   int nh3_val = analogRead(NH3_PIN);
   int no2_val = analogRead(NO2_PIN);
 
-  // --- Montagem e Envio da String JSON via Serial ---
-  Serial.print("{");
+  // --- Leitura Robusta do PMS5003 (Sem travar/atrasar o fluxo) ---
+  if (Serial2.available() >= 32) {
+    // peek() espia o primeiro byte sem tirá-lo da fila.
+    // O pacote correto do PMS sempre começa com o byte de cabeçalho 0x42
+    if (Serial2.peek() == 0x42) {
 
-  // Se o DHT falhar, envia 0 para não quebrar o formato numérico do JSON
+      // Lê os 32 bytes de uma vez para o buffer
+      Serial2.readBytes(pmsBuffer, 32);
+
+      // Valida se o segundo byte de cabeçalho é o esperado (0x4D)
+      if (pmsBuffer[1] == 0x4D) {
+        // Monta os valores de 16 bits combinando o High Byte e Low Byte
+        pm1  = (pmsBuffer[10] << 8) | pmsBuffer[11];
+        pm25 = (pmsBuffer[12] << 8) | pmsBuffer[13];
+        pm10 = (pmsBuffer[14] << 8) | pmsBuffer[15];
+      }
+    } else {
+      // Se o primeiro byte não for 0x42, descarta apenas ele para alinhar o fluxo de dados
+      Serial2.read();
+    }
+  }
+
+  // --- Exibição dos Dados formatados no Monitor Serial ---
   if (isnan(h) || isnan(t)) {
-    Serial.print("\"temp\":0.0,\"umid\":0,");
+    Serial.print("Erro DHT11 | ");
   } else {
-    Serial.print("\"temp\":"); Serial.print(t); Serial.print(",");
-    Serial.print("\"umid\":"); Serial.print(h); Serial.print(",");
+    Serial.print("Temperatura: ");
+    Serial.print(t);
+    Serial.print("°C | Umidade: ");
+    Serial.print(h);
+    Serial.print("% | ");
   }
 
-  // Envia os dados dos sensores de gás
-  Serial.print("\"mq135\":"); Serial.print(mq_val); Serial.print(",");
-  Serial.print("\"co\":");    Serial.print(co_val);  Serial.print(",");
-  Serial.print("\"nh3\":");   Serial.print(nh3_val); Serial.print(",");
-  Serial.print("\"no2\":");   Serial.print(no2_val); Serial.print(",");
+  // Sensores de Gás (Formatado via printf)
+  Serial.printf(
+    "MQ: %d | CO: %d | NH3: %d | NO2: %d",
+    mq_val,
+    co_val,
+    nh3_val,
+    no2_val
+  );
 
-  // --- Leitura do PMS5003 (Particulados) ---
-  if (pms.read(data)) {
-    // Se o sensor responder, envia os valores reais
-    Serial.print("\"pm10\":");  Serial.print(data.PM_AE_UG_1_0);  Serial.print(",");
-    Serial.print("\"pm25\":");  Serial.print(data.PM_AE_UG_2_5);  Serial.print(",");
-    Serial.print("\"pm100\":"); Serial.print(data.PM_AE_UG_10_0);
-  } else {
-    // Caso esteja aguardando estabilização, envia 0
-    Serial.print("\"pm10\":0,\"pm25\":0,\"pm100\":0");
-  }
+  // Material Particulado (PMS5003)
+  Serial.printf(
+    " | PM1.0: %d | PM2.5: %d | PM10: %d ug/m3",
+    pm1,
+    pm25,
+    pm10
+  );
 
-  // Fecha o objeto JSON e pula uma linha (\n), indicando fim da mensagem
-  Serial.println("}");
+  Serial.println();
 
-  // Mantém o delay de 2 segundos para estabilidade dos sensores
+  // Mantém o delay de 2 segundos exigido para a estabilização do DHT11
   delay(2000);
 }
