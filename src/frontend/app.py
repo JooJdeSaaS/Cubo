@@ -60,7 +60,7 @@ resposta_container = st.sidebar.empty()
 while True:
     # --- SIMULAÇÃO ESTOCÁSTICA DOS SENSORES (MOCK DE HARDWARE) ---
     # Intervalos numéricos baseados estritamente nos limites operacionais físicos dos sensores REAIS:
-    temp = round(random.uniform(15.0, 38.0), 2)
+    temp = round(random.uniform(15.0, 29.0), 2)
     umid = random.randint(40, 90)
     co = random.randint(100, 600)
     no2 = random.randint(5, 40)
@@ -81,7 +81,7 @@ while True:
     alerta_container.markdown(alerta_html, unsafe_allow_html=True)
 
     if botao_perguntar and pergunta_usuario:
-        if API_KEY == "SUA_CHAVE_API_AQUI":
+        if API_KEY == "AQ.Ab8RN6LpcxNv-XCgDRy8w_ZRbuJS5mtRp39Q683d68cT2Hku2A":
             resposta_container.error("Por favor, configure uma API Key válida da Google no código.")
         else:
             resposta_container.info("A analisar as condições do Cubo...")
